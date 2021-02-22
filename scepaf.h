@@ -18,16 +18,16 @@ typedef struct {
 typedef struct ScePafTextureBase {
 	struct ScePafTextureBase *prev;
 	struct ScePafTextureBase *next;
-	int ctr;
+	int lock;
 	short width;
 	short height;
 	int unk10;
 	int unk14;
 	int unk18;
 	short width2;
-	short heigh2;
-	int unk20;
-	int unk24;
+	short height2;
+	float x_scale;
+	float y_scale;
 	int pixels;
 	short width3;
 	short unk3e;
@@ -51,6 +51,7 @@ typedef struct {
 	int unk8;
 	int unkc;
 	ScePafTextureBase base;
+	// full size is 0x94
 } ScePafTexture;
 
 #endif
