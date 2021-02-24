@@ -20,11 +20,13 @@
 
 static SceUID SceShell_uid = 0;
 static uint32_t scePafToplevelGetResourceTexture_ofs = 0;
+static uint32_t wallpaper_scale_patch_ofs = 0;
 
 static SceUID lockscreen_init_hook_id = -1;
 static tai_hook_ref_t lockscreen_init_hook_ref;
 static SceUID scePafToplevelGetResourceTexture_hook_id = -1;
 static tai_hook_ref_t scePafToplevelGetResourceTexture_hook_ref;
+static SceUID wallpaper_scale_patch_id = -1;
 
 #define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
 
@@ -76,7 +78,10 @@ static int lockscreen_init_hook(int r0, int r1) {
 		HOOK_OFFSET(SceShell_uid, 0, scePafToplevelGetResourceTexture_ofs, 0, scePafToplevelGetResourceTexture);
 	}
 
+	// b 0xE0
+	INJECT_DATA(SceShell_uid, 0, wallpaper_scale_patch_ofs, "\x6e\xe0", 2, wallpaper_scale_patch);
 	int ret = TAI_NEXT(lockscreen_init_hook, lockscreen_init_hook_ref, r0, r1);
+	UNINJECT(wallpaper_scale_patch);
 
 	if (!done && scePafToplevelGetResourceTexture_hook_id >= 0) {
 		UNHOOK(scePafToplevelGetResourceTexture);
@@ -247,6 +252,9 @@ int module_start() {
 	}
 	lockscreen_init_addr = SceShell_seg0 + lockscreen_init_ofs;
 	SCE_DBG_LOG_INFO("lockscreen_init at offset %p", lockscreen_init_ofs);
+
+	wallpaper_scale_patch_ofs = lockscreen_init_ofs - 0x192;
+	SCE_DBG_LOG_INFO("wallpaper_scale_patch at offset %p", wallpaper_scale_patch_ofs);
 
 	scePafToplevelGetResourceTexture_call_addr = (uint16_t *)(lockscreen_init_addr + 0x13E);
 	if (get_addr_blx(scePafToplevelGetResourceTexture_call_addr, &scePafToplevelGetResourceTexture_addr) < 0) {
