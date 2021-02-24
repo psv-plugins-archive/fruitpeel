@@ -44,6 +44,7 @@ add_library(fruitpeel MODULE
   fruitpeel.c
   fruitpeel.emd
   opcode.c
+  patch.c
 )
 
 target_link_libraries(fruitpeel
