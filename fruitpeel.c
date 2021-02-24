@@ -7,6 +7,7 @@
 #include <gxm.h>
 #include <kernel/constant.h>
 #include <kernel/iofilemgr.h>
+#include <kernel/libkernel.h>
 #include <kernel/modulemgr.h>
 #include <kernel/sysmem.h>
 #include <libdbg.h>
@@ -142,8 +143,9 @@ fail:
 	return -1;
 }
 
-static int decode_png_file(void *file_buffer, int file_size) {
+static int decode_png_file(const void *file_buffer, int file_size, SceUID *decode_buffer_id, void **decode_buffer) {
 	int ret = 0;
+	int decode_buffer_size = 0;
 
 	// Check PNG info
 	int output_format, stream_format;
@@ -152,8 +154,12 @@ static int decode_png_file(void *file_buffer, int file_size) {
 		SCE_DBG_LOG_ERROR("Failed to get PNG info %08X", ret);
 		goto fail;
 	}
-	if (width % 8 != 0) {
-		SCE_DBG_LOG_ERROR("Width is not a multiple of 8 %u", width);
+	if (width > 896) {
+		SCE_DBG_LOG_ERROR("Width is too large %u", width);
+		goto fail;
+	}
+	if (height > 448) {
+		SCE_DBG_LOG_ERROR("Height is too large %u", height);
 		goto fail;
 	}
 	if (output_format != SCE_PNG_FORMAT_CLUT8) {
@@ -162,7 +168,43 @@ static int decode_png_file(void *file_buffer, int file_size) {
 	}
 
 	// Allocate decode buffer
-	tex_mem_size = ALIGN(((width*8+7)/8+1)*height + (4<<8), SCE_KERNEL_4KiB);
+	decode_buffer_size = ALIGN(((width*8+7)/8+1)*height + (4<<8), SCE_KERNEL_4KiB);
+	*decode_buffer_id = sceKernelAllocMemBlock(
+		"FruitpeelPngDecodeBuffer",
+		SCE_KERNEL_MEMBLOCK_TYPE_USER_RW,
+		decode_buffer_size,
+		NULL);
+	if (*decode_buffer_id < 0) {
+		SCE_DBG_LOG_ERROR("Failed to allocate PNG decode memory %08X", *decode_buffer_id);
+		goto fail;
+	}
+	sceKernelGetMemBlockBase(*decode_buffer_id, decode_buffer);
+
+	// Decode PNG
+	ret = scePngDec(*decode_buffer, decode_buffer_size, file_buffer, file_size, &width, &height, &output_format);
+	if (ret < 0) {
+		SCE_DBG_LOG_ERROR("Failed to decode PNG %08X", ret);
+		goto fail2;
+	}
+	SCE_DBG_LOG_INFO("Decoded PNG %ux%u", width, height);
+
+	return 0;
+
+fail2:
+	sceKernelFreeMemBlock(*decode_buffer_id);
+fail:
+	return -1;
+}
+
+static int create_texture(const void *png_buffer) {
+
+	// Compute margin sizes
+	int x_margin = (int)(0.035714 * (float)width);
+	int y_margin = (int)(0.071428 * (float)height);
+	int stride = ALIGN(2*x_margin+width, 8);
+
+	// Allocate palette and texture data buffer
+	tex_mem_size = ALIGN((4<<8) + stride * (2*y_margin+height), SCE_KERNEL_4KiB);
 	tex_mem_id = sceKernelAllocMemBlock(
 		"FruitpeelTextureData",
 		SCE_KERNEL_MEMBLOCK_TYPE_USER_NC_RW,
@@ -173,20 +215,22 @@ static int decode_png_file(void *file_buffer, int file_size) {
 		goto fail;
 	}
 	sceKernelGetMemBlockBase(tex_mem_id, &tex_buffer);
+	SCE_DBG_LOG_INFO("Texture buffer created size %08X", tex_mem_size);
 
-	// Decode PNG
-	ret = scePngDec(tex_buffer, tex_mem_size, file_buffer, file_size, &width, &height, &output_format);
-	if (ret < 0) {
-		SCE_DBG_LOG_ERROR("Failed to decode PNG %08X", ret);
-		goto fail2;
+	// Copy decoded PNG data
+	sceClibMemcpy(tex_buffer, png_buffer, 4<<8);
+	for (int i = 0; i < height; i++) {
+		sceClibMemcpy(
+			(char *)tex_buffer + (4<<8) + (i+y_margin)*stride + x_margin,
+			(char *)png_buffer + (4<<8) + i*width,
+			width);
 	}
-	SCE_DBG_LOG_INFO("Decoded PNG %ux%u", width, height);
 
+	width = 2*x_margin + width;
+	height = 2*y_margin + height;
+	SCE_DBG_LOG_INFO("Texture dimensions %ux%u", width, height);
 	return 0;
 
-fail2:
-	sceKernelFreeMemBlock(tex_mem_id);
-	tex_mem_id = -1;
 fail:
 	return -1;
 }
@@ -215,6 +259,8 @@ int module_start() {
 	SceUID file_mem_id = 0;
 	void *file_buffer = NULL;
 	int file_size = 0;
+	SceUID decode_buffer_id = 0;
+	void *decode_buffer = NULL;
 
 	tai_module_info_t minfo;
 	SceKernelModuleInfo sce_minfo;
@@ -267,8 +313,14 @@ int module_start() {
 		goto fail;
 	}
 
-	ret = decode_png_file(file_buffer, file_size);
+	ret = decode_png_file(file_buffer, file_size, &decode_buffer_id, &decode_buffer);
 	sceKernelFreeMemBlock(file_mem_id);
+	if (ret < 0) {
+		goto fail;
+	}
+
+	ret = create_texture(decode_buffer);
+	sceKernelFreeMemBlock(decode_buffer_id);
 	if (ret < 0) {
 		goto fail;
 	}
