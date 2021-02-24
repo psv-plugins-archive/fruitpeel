@@ -14,14 +14,18 @@
 #include <scepng.h>
 #include <taihen.h>
 
+#include "opcode.h"
 #include "scepaf.h"
 
+static SceUID SceShell_uid = 0;
+static uint32_t scePafToplevelGetResourceTexture_ofs = 0;
+
 /* ARGSUSED */
-static int hook_import(
-	const char *mod, int libnid, int funcnid, void *func,
+static int hook_offset(
+	SceUID modid, int segidx, int offset, int thumb, void *func,
 	SceUID *hook_id, tai_hook_ref_t *hook_ref, const char *name)
 {
-	*hook_id = taiHookFunctionImport(hook_ref, mod, libnid, funcnid, func);
+	*hook_id = taiHookFunctionOffset(hook_ref, modid, segidx, offset, thumb, func);
 	if (*hook_id < 0) {
 		SCE_DBG_LOG_ERROR("Failed to hook %s %08X", name, *hook_id);
 	} else {
@@ -30,8 +34,8 @@ static int hook_import(
 	return *hook_id;
 }
 
-#define HOOK_IMPORT(mod, libnid, funcnid, func) \
-	hook_import(mod, libnid, funcnid, func##_hook, &func##_hook_id, &func##_hook_ref, #func)
+#define HOOK_OFFSET(modid, segidx, offset, thumb, func) \
+	hook_offset(modid, segidx, offset, thumb, func##_hook, &func##_hook_id, &func##_hook_ref, #func)
 
 /* ARGSUSED */
 static int unhook(SceUID *hook_id, tai_hook_ref_t hook_ref, const char *name) {
@@ -53,8 +57,8 @@ static int unhook(SceUID *hook_id, tai_hook_ref_t hook_ref, const char *name) {
 #define UNHOOK(func) \
 	unhook(&func##_hook_id, func##_hook_ref, #func)
 
-static SceUID sceSysmoduleLoadModuleInternalWithArg_hook_id = -1;
-static tai_hook_ref_t sceSysmoduleLoadModuleInternalWithArg_hook_ref;
+static SceUID lockscreen_init_hook_id = -1;
+static tai_hook_ref_t lockscreen_init_hook_ref;
 static SceUID scePafToplevelGetResourceTexture_hook_id = -1;
 static tai_hook_ref_t scePafToplevelGetResourceTexture_hook_ref;
 
@@ -101,13 +105,18 @@ done:
 	return ret;
 }
 
-static int sceSysmoduleLoadModuleInternalWithArg_hook(SceUInt32 id, SceSize args, void *argp, void *unk) {
-	int ret = TAI_NEXT(
-		sceSysmoduleLoadModuleInternalWithArg_hook, sceSysmoduleLoadModuleInternalWithArg_hook_ref,
-		id, args, argp, unk);
+static int lockscreen_init_hook(int r0, int r1) {
+	static int done = 0;
 
-	if (scePafToplevelGetResourceTexture_hook_id < 0 && ret == SCE_OK && id == SCE_SYSMODULE_INTERNAL_PAF) {
-		HOOK_IMPORT("SceShell", 0x4D9A9DD0, 0x38FFFE8E, scePafToplevelGetResourceTexture);
+	if (!done) {
+		HOOK_OFFSET(SceShell_uid, 0, scePafToplevelGetResourceTexture_ofs, 0, scePafToplevelGetResourceTexture);
+	}
+
+	int ret = TAI_NEXT(lockscreen_init_hook, lockscreen_init_hook_ref, r0, r1);
+
+	if (!done && scePafToplevelGetResourceTexture_hook_id >= 0) {
+		UNHOOK(scePafToplevelGetResourceTexture);
+		done = 1;
 	}
 
 	return ret;
@@ -214,7 +223,7 @@ fail:
 }
 
 static void cleanup(void) {
-	UNHOOK(sceSysmoduleLoadModuleInternalWithArg);
+	UNHOOK(lockscreen_init);
 	UNHOOK(scePafToplevelGetResourceTexture);
 
 	if (blue_tex) {
@@ -237,6 +246,51 @@ int module_start() {
 	SceUID file_mem_id = 0;
 	void *file_buffer = NULL;
 	int file_size = 0;
+
+	tai_module_info_t minfo;
+	SceKernelModuleInfo sce_minfo;
+	uint32_t SceShell_dbg_fingerprint;
+	uint32_t SceShell_seg0;
+
+	uint32_t lockscreen_init_ofs;
+	uint32_t lockscreen_init_addr;
+	uint16_t *scePafToplevelGetResourceTexture_call_addr;
+	uint32_t scePafToplevelGetResourceTexture_addr;
+
+	minfo.size = sizeof(minfo);
+	if ((ret = taiGetModuleInfo("SceShell", &minfo)) < 0) {
+		SCE_DBG_LOG_ERROR("Failed to get SceShell taiHEN module info %08X", ret);
+		goto fail;
+	}
+	SceShell_uid = minfo.modid;
+	SceShell_dbg_fingerprint = minfo.module_nid;
+
+	sce_minfo.size = sizeof(sce_minfo);
+	if ((ret = sceKernelGetModuleInfo(SceShell_uid, &sce_minfo)) < 0) {
+		SCE_DBG_LOG_ERROR("Failed to get SceShell module info %08X", ret);
+		goto fail;
+	}
+	SceShell_seg0 = (uint32_t)sce_minfo.segments[0].vaddr;
+
+	switch(SceShell_dbg_fingerprint) {
+		case 0x0552F692: // 3.60 retail
+		case 0x532155E5: // 3.61 retail
+			lockscreen_init_ofs = 0x23B7BE;
+			break;
+		default:
+			SCE_DBG_LOG_ERROR("Unsupported SceShell version");
+			goto fail;
+	}
+	lockscreen_init_addr = SceShell_seg0 + lockscreen_init_ofs;
+	SCE_DBG_LOG_INFO("lockscreen_init at offset %p", lockscreen_init_ofs);
+
+	scePafToplevelGetResourceTexture_call_addr = (uint16_t *)(lockscreen_init_addr + 0x13E);
+	if (get_addr_blx(scePafToplevelGetResourceTexture_call_addr, &scePafToplevelGetResourceTexture_addr) < 0) {
+		goto fail;
+	}
+	scePafToplevelGetResourceTexture_ofs = scePafToplevelGetResourceTexture_addr - SceShell_seg0;
+	SCE_DBG_LOG_INFO("scePafToplevelGetResourceTexture at offset %p", scePafToplevelGetResourceTexture_ofs);
+
 	if (read_png_file(&file_mem_id, &file_buffer, &file_size) < 0) {
 		goto fail;
 	}
@@ -247,7 +301,7 @@ int module_start() {
 		goto fail;
 	}
 
-	if (HOOK_IMPORT("SceShell", 0x03FCF19D, 0xC3C26339, sceSysmoduleLoadModuleInternalWithArg) < 0) {
+	if (HOOK_OFFSET(SceShell_uid, 0, lockscreen_init_ofs, 1, lockscreen_init) < 0) {
 		goto fail;
 	}
 

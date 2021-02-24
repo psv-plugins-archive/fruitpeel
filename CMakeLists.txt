@@ -43,6 +43,7 @@ add_compile_definitions(
 add_library(fruitpeel MODULE
   fruitpeel.c
   fruitpeel.emd
+  opcode.c
 )
 
 target_link_libraries(fruitpeel
