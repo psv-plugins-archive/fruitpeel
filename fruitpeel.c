@@ -292,6 +292,23 @@ int module_start() {
 		case 0x532155E5: // 3.61 retail
 			lockscreen_init_ofs = 0x23B7BE;
 			break;
+		case 0xBB4B0A3E: // 3.63 retail
+		case 0x5549BF1F: // 3.65 retail
+		case 0x34B4D82E: // 3.67 retail
+		case 0x12DAC0F3: // 3.68 retail
+		case 0x0703C828: // 3.69 retail
+		case 0x2053B5A5: // 3.70 retail
+		case 0xF476E785: // 3.71 retail
+		case 0x939FFBE9: // 3.72 retail
+		case 0x734D476A: // 3.73 retail
+			lockscreen_init_ofs = 0x23B85A;
+			break;
+		case 0xEAB89D5C: // 3.60 testkit
+			lockscreen_init_ofs = 0x233BF2;
+			break;
+		case 0x587F9CED: // 3.65 testkit
+			lockscreen_init_ofs = 0x233C8E;
+			break;
 		default:
 			SCE_DBG_LOG_ERROR("Unsupported SceShell version");
 			goto fail;
