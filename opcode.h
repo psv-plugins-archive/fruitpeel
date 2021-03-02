@@ -9,6 +9,6 @@
 
 #include <stdint.h>
 
-int get_addr_blx(const uint16_t *pc, uint32_t *addr);
+int get_addr_blx(uint16_t *pc, uint16_t **addr);
 
 #endif

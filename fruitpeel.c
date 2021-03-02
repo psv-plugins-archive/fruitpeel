@@ -265,12 +265,12 @@ int module_start() {
 	tai_module_info_t minfo;
 	SceKernelModuleInfo sce_minfo;
 	uint32_t SceShell_dbg_fingerprint;
-	uint32_t SceShell_seg0;
+	uint16_t *SceShell_seg0;
 
 	uint32_t lockscreen_init_ofs;
-	uint32_t lockscreen_init_addr;
+	uint16_t *lockscreen_init_addr;
 	uint16_t *scePafToplevelGetResourceTexture_call_addr;
-	uint32_t scePafToplevelGetResourceTexture_addr;
+	uint16_t *scePafToplevelGetResourceTexture_addr;
 
 	minfo.size = sizeof(minfo);
 	if ((ret = taiGetModuleInfo("SceShell", &minfo)) < 0) {
@@ -285,7 +285,7 @@ int module_start() {
 		SCE_DBG_LOG_ERROR("Failed to get SceShell module info %08X", ret);
 		goto fail;
 	}
-	SceShell_seg0 = (uint32_t)sce_minfo.segments[0].vaddr;
+	SceShell_seg0 = (uint16_t *)sce_minfo.segments[0].vaddr;
 
 	switch(SceShell_dbg_fingerprint) {
 		case 0x0552F692: // 3.60 retail
@@ -313,17 +313,17 @@ int module_start() {
 			SCE_DBG_LOG_ERROR("Unsupported SceShell version");
 			goto fail;
 	}
-	lockscreen_init_addr = SceShell_seg0 + lockscreen_init_ofs;
+	lockscreen_init_addr = SceShell_seg0 + lockscreen_init_ofs/2;
 	SCE_DBG_LOG_INFO("lockscreen_init at offset %p", lockscreen_init_ofs);
 
 	wallpaper_scale_patch_ofs = lockscreen_init_ofs - 0x192;
 	SCE_DBG_LOG_INFO("wallpaper_scale_patch at offset %p", wallpaper_scale_patch_ofs);
 
-	scePafToplevelGetResourceTexture_call_addr = (uint16_t *)(lockscreen_init_addr + 0x13E);
+	scePafToplevelGetResourceTexture_call_addr = lockscreen_init_addr + 0x13E/2;
 	if (get_addr_blx(scePafToplevelGetResourceTexture_call_addr, &scePafToplevelGetResourceTexture_addr) < 0) {
 		goto fail;
 	}
-	scePafToplevelGetResourceTexture_ofs = scePafToplevelGetResourceTexture_addr - SceShell_seg0;
+	scePafToplevelGetResourceTexture_ofs = (uint32_t)scePafToplevelGetResourceTexture_addr - (uint32_t)SceShell_seg0;
 	SCE_DBG_LOG_INFO("scePafToplevelGetResourceTexture at offset %p", scePafToplevelGetResourceTexture_ofs);
 
 	if (read_png_file(&file_mem_id, &file_buffer, &file_size) < 0) {

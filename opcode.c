@@ -43,7 +43,7 @@ static int decode_blx_t2(uint16_t op_lo, uint16_t op_hi, int *imm) {
 	return decode_bl_common(op_lo, op_hi, imm, 0xF800, 0xF000, 0xD001, 0xC000);
 }
 
-int get_addr_blx(const uint16_t *pc, uint32_t *addr) {
+int get_addr_blx(uint16_t *pc, uint16_t **addr) {
 	int ret;
 	int offset = 0;
 	if ((ret = decode_blx_t2(pc[0], pc[1], &offset)) < 0) {
@@ -51,8 +51,7 @@ int get_addr_blx(const uint16_t *pc, uint32_t *addr) {
 	}
 
 	// PC is one word ahead and aligned backwards to word boundary
-	uint32_t pc_align = ((uint32_t)pc + 4) - ((uint32_t)pc % 4);
-	*addr = pc_align + offset;
+	*addr = pc + 2 - ((uintptr_t)pc % 4 ? 1 : 0) + offset/2;
 
 	SCE_DBG_LOG_INFO("BLX at %p branches to %p", pc, *addr);
 	return 0;
