@@ -43,9 +43,7 @@ static void *tex_buffer = NULL;
 static int width = 0, height = 0;
 
 static int scePafToplevelGetResourceTexture_hook(ScePafTexture **tex, int r1, ScePafResourceId *id) {
-	int ret = TAI_NEXT(
-		scePafToplevelGetResourceTexture_hook, scePafToplevelGetResourceTexture_hook_ref,
-		tex, r1, id);
+	int ret = HOOK_NEXT(scePafToplevelGetResourceTexture, tex, r1, id);
 
 	if (!blue_tex && id && id->resource_id == 0xCA707736 && tex && *tex && (*tex)->base.texture) {
 		SCE_DBG_LOG_INFO("RCO GIM texture %08X found", id->resource_id);
@@ -80,9 +78,9 @@ static int lockscreen_init_hook(int r0, int r1) {
 	}
 
 	// b 0xE0
-	INJECT_DATA(SceShell_uid, 0, wallpaper_scale_patch_ofs, "\x6e\xe0", 2, wallpaper_scale_patch);
-	int ret = TAI_NEXT(lockscreen_init_hook, lockscreen_init_hook_ref, r0, r1);
-	UNINJECT(wallpaper_scale_patch);
+	INJECT_DATA(SceShell_uid, 0, wallpaper_scale_patch_ofs, "\x6e\xe0", 2, wallpaper_scale);
+	int ret = HOOK_NEXT(lockscreen_init, r0, r1);
+	UNINJECT(wallpaper_scale);
 
 	if (!done && scePafToplevelGetResourceTexture_hook_id >= 0) {
 		UNHOOK(scePafToplevelGetResourceTexture);

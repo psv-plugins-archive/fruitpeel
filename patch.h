@@ -9,15 +9,17 @@
 
 #include <taihen.h>
 
+#define HOOK_NEXT(func, ...) TAI_NEXT(func##_hook, func##_hook_ref, ##__VA_ARGS__)
+
 #define HOOK_OFFSET(modid, segidx, offset, thumb, func) \
 	hook_offset(modid, segidx, offset, thumb, func##_hook, &func##_hook_id, &func##_hook_ref, #func)
 
 #define UNHOOK(func) unhook(&func##_hook_id, func##_hook_ref, #func)
 
 #define INJECT_DATA(modid, segidx, offset, data, size, name) \
-	inject_data(modid, segidx, offset, data, size, &name##_id, #name)
+	inject_data(modid, segidx, offset, data, size, &name##_patch_id, #name)
 
-#define UNINJECT(name) uninject(&name##_id, #name)
+#define UNINJECT(name) uninject(&name##_patch_id, #name)
 
 int hook_offset(
 	SceUID modid, int segidx, int offset, int thumb, void *func,
